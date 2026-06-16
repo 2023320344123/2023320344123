@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>光的反射折射仿真实验</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui, -apple-system, BlinkMacSystemFont, sans-serif;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;min-height:100vh;overflow-x:hidden;padding:0;}
+body{padding:max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)) 8px;background:#fff;}
+/* 电脑端左右分栏布局 */
+.wrap{display:flex;gap:12px;max-width:1400px;margin:0 auto;}
+#canvasBox{flex:4;background:#f0f8ff;border:2px solid red;}
+#optCanvas{width:100%;display:block;background:#f0f8ff;touch-action:none}
+.controlWrap{flex:1;padding:12px 8px;border:2px solid red;}
+.sliderItem{margin:16px 0}
+.sliderItem label{font-size:17px;font-weight:500;color:#000;display:block;margin-bottom:6px}
+.sliderVal{font-size:18px;margin:4px 0;color:#000}
+input[type="range"]{width:100%;height:8px}
+.btnGroup{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:18px 0;}
+.btnGroup button{padding:10px 6px;font-size:15px;background:#2678e9;color:#fff;border:none;border-radius:6px}
+.tipText{color:red;font-size:14px;line-height:1.6;margin:10px 0}
+.angleShow{padding:10px 0;font-size:17px;line-height:1.8}
+/* 手机自动上下堆叠 */
+@media(max-width:768px){
+    .wrap{flex-direction:column;}
+    .btnGroup{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+    <div id="canvasBox">
+        <canvas id="optCanvas"></canvas>
+    </div>
+    <div class="controlWrap">
+        <div class="sliderItem">
+            <label>介质1折射率 n1 (上侧)</label>
+            <input type="range" id="n1Slider" min="1.0" max="1.8" step="0.01" value="1.00">
+            <div class="sliderVal" id="n1Text">1.00</div>
+        </div>
+        <div class="sliderItem">
+            <label>介质2折射率 n2 (下侧)</label>
+            <input type="range" id="n2Slider" min="1.0" max="1.8" step="0.01" value="1.50">
+            <div class="sliderVal" id="n2Text">1.50</div>
+        </div>
+        <div>
+            <div style="font-size:17px;font-weight:500;margin:8px 0;">快速介质切换</div>
+            <div class="btnGroup">
+                <button id="btnAirGlass">空气→玻璃</button>
+                <button id="btnGlassAir">玻璃→空气</button>
+                <button id="btnAirWater">空气→水</button>
+            </div>
+        </div>
+        <div class="tipText">操作: 电脑端鼠标拖动红点/笔身；手机端手指按住平移旋转<br>硬性标准: 激光笔中轴线与入射红光完全重合平行</div>
+        <div class="angleShow">
+            <div>入射角：<span id="txtI">0.00°</span></div>
+            <div>反射角：<span id="txtR">0.00°</span></div>
+            <div>折射角：<span id="txtT">0.00°</span></div>
+            <div>临界角：<span id="txtC">无°</span></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('optCanvas');
+const ctx = canvas.getContext('2d');
+const canvasBox = document.getElementById('canvasBox');
+const n1Slider = document.getElementById('n1Slider');
+const n2Slider = document.getElementById('n2Slider');
+const n1Text = document.getElementById('n1Text');
+const n2Text = document.getElementById('n2Text');
+const txtI = document.getElementById('txtI');
+const txtR = document.getElementById('txtR');
+const txtT = document.getElementById('txtT');
+const txtC = document.getElementById('txtC');
+const btnAirGlass = document.getElementById('btnAirGlass');
+const btnGlassAir = document.getElementById('btnGlassAir');
+const btnAirWater = document.getElementById('btnAirWater');
+
+let n1 = 1.00, n2 = 1.50;
+let centerX = 0, centerY = 0;
+let laserDot = {x:0, y:0};
+let dragTarget = null;
+const dragRadius = 6;
+const PI = Math.PI;
+const rad2deg = rad => rad * 180 / PI;
+const deg2rad = deg => deg * PI / 180;
+
+let resizeTimer = null;
+function resizeCanvas(){
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(()=>{
+        const boxW = canvasBox.clientWidth;
+        canvas.width = boxW;
+        canvas.height = boxW * 0.72;
+        centerX = canvas.width / 2;
+        centerY = canvas.height / 2;
+        laserDot.x = centerX - boxW * 0.24;
+        laserDot.y = centerY - boxW * 0.16;
+    }, 80);
+}
+window.addEventListener('resize', resizeCanvas);
+window.addEventListener('orientationchange', resizeCanvas);
+resizeCanvas();
+
+n1Slider.oninput = ()=>{
+    n1 = Number(n1Slider.value);
+    n1Text.textContent = n1.toFixed(2);
+};
+n2Slider.oninput = ()=>{
+    n2 = Number(n2Slider.value);
+    n2Text.textContent = n2.toFixed(2);
+};
+btnAirGlass.onclick = ()=>{
+    n1=1.00;n2=1.50;
+    n1Slider.value=1.00;n2Slider.value=1.50;
+    n1Text.textContent='1.00';n2Text.textContent='1.50';
+};
+btnGlassAir.onclick = ()=>{
+    n1=1.50;n2=1.00;
+    n1Slider.value=1.50;n2Slider.value=1.00;
+    n1Text.textContent='1.50';n2Text.textContent='1.00';
+};
+btnAirWater.onclick = ()=>{
+    n1=1.00;n2=1.33;
+    n1Slider.value=1.00;n2Slider.value=1.33;
+    n1Text.textContent='1.00';n2Text.textContent='1.33';
+};
+
+function calcAngles(){
+    const dx = centerX - laserDot.x;
+    const dy = centerY - laserDot.y;
+    const rayLen = Math.hypot(dx, dy);
+    let inRayX = dx / rayLen;
+    let inRayY = dy / rayLen;
+    const dotIsLeft = laserDot.x < centerX;
+    const normX = 0, normY = -1;
+    const isIncUp = laserDot.y < centerY;
+    let nInc, nRefr;
+    if(isIncUp){
+        nInc = n1;
+        nRefr = n2;
+    }else{
+        nInc = n2;
+        nRefr = n1;
+    }
+
+    let dot = inRayX * normX + inRayY * normY;
+    dot = Math.max(-1, Math.min(1, dot));
+    let incRad = Math.acos(dot);
+    let incDeg = rad2deg(incRad);
+    if(incDeg > 90) incDeg = 180 - incDeg;
+    incRad = deg2rad(incDeg);
+    const refDeg = incDeg;
+    const refRad = incRad;
+
+    let traRad = 0, traDeg = 0;
+    let hasRefract = true;
+    let criStr = "无°";
+
+    if(nRefr > nInc){
+        const sinT = (nInc / nRefr) * Math.sin(incRad);
+        traRad = Math.asin(sinT);
+        traDeg = rad2deg(traRad);
+    }else{
+        const sinC = nRefr / nInc;
+        const criRad = Math.asin(sinC);
+        criStr = rad2deg(criRad).toFixed(2) + "°";
+        if(Math.sin(incRad) >= sinC){
+            hasRefract = false;
+        }else{
+            const sinT = (nInc / nRefr) * Math.sin(incRad);
+            traRad = Math.asin(sinT);
+            traDeg = rad2deg(traRad);
+        }
+    }
+    if(traDeg > 90) traDeg = 180 - traDeg;
+
+    txtI.textContent = incDeg.toFixed(2) + "°";
+    txtR.textContent = refDeg.toFixed(2) + "°";
+    txtT.textContent = hasRefract ? traDeg.toFixed(2) + "°" : "全反射";
+    txtC.textContent = criStr;
+
+    return {incRad, refRad, traRad, hasRefract, incDeg, dotIsLeft, isIncUp};
+}
+
+function render(){
+    centerX = canvas.width / 2;
+    centerY = canvas.height / 2;
+    const boxW = canvas.width;
+    const rayLen = boxW * 0.32;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    const angleData = calcAngles();
+
+    ctx.fillStyle = "rgba(170, 255, 170, 0.45)";
+    ctx.fillRect(0, centerY, canvas.width, canvas.height - centerY);
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, centerY);
+    ctx.lineTo(canvas.width, canvas.height/2);
+    ctx.stroke();
+
+    ctx.setLineDash([7,5]);
+    ctx.strokeStyle = "#555";
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(centerX, 10);
+    ctx.lineTo(centerX, canvas.height - 10);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#000";
+    ctx.font = "bold 15px sans-serif";
+    ctx.fillText("法线", centerX + 6, 28);
+
+    drawUpperSemiProtractor(centerX, centerY, boxW);
+    drawLowerSemiProtractor(centerX, centerY, boxW);
+
+    ctx.strokeStyle = "#f00";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(laserDot.x, laserDot.y);
+    ctx.lineTo(centerX, centerY);
+    ctx.stroke();
+
+    const dirX = centerX - laserDot.x;
+    const dirY = centerY - laserDot.y;
+    drawMatchStyleLaser(laserDot.x, laserDot.y, dirX, dirY, boxW);
+
+    ctx.fillStyle = "#f00";
+    ctx.beginPath();
+    ctx.arc(laserDot.x, laserDot.y, dragRadius, 0, PI*2);
+    ctx.fill();
+
+    const refSide = Math.sign(centerX - laserDot.x);
+    const refX = refSide * Math.sin(angleData.refRad);
+    const refY = angleData.isIncUp ? -Math.cos(angleData.refRad) : Math.cos(angleData.refRad);
+    ctx.strokeStyle = "#ff9000";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY);
+    ctx.lineTo(centerX + refX * rayLen, centerY + refY * rayLen);
+    ctx.stroke();
+
+    if(angleData.hasRefract){
+        const traSide = angleData.dotIsLeft ? 1 : -1;
+        const traX = traSide * Math.sin(angleData.traRad);
+        const traY = angleData.isIncUp ? Math.cos(angleData.traRad) : -Math.cos(angleData.traRad);
+        ctx.strokeStyle = "#0066ff";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.lineTo(centerX + traX * rayLen, centerY + traY * rayLen);
+        ctx.stroke();
+    }
+
+    requestAnimationFrame(render);
+}
+
+function drawUpperSemiProtractor(cx, cy, boxW){
+    const r = boxW * 0.13;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.strokeStyle = "#333";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, PI);
+    ctx.stroke();
+    ctx.font = "11px sans-serif";
+    const majorTicks = [
+        {deg:0, label:'0'},{deg:30, label:'30'},{deg:60, label:'60'},
+        {deg:90, label:'90'},{deg:120, label:'120'},{deg:150, label:'150'},{deg:180, label:'180'}
+    ];
+    for(let d=0;d<=180;d+=10){
+        const rad = deg2rad(d);
+        const x = Math.cos(rad)*r;
+        const y = -Math.sin(rad)*r;
+        ctx.beginPath();
+        const innerR = d%30===0 ? r-10 : r-5;
+        ctx.moveTo(x,y);
+        ctx.lineTo(Math.cos(rad)*innerR, -Math.sin(rad)*innerR);
+        ctx.stroke();
+    }
+    majorTicks.forEach(t=>{
+        const rad = deg2rad(t.deg);
+        const tx = Math.cos(rad)*(r+8);
+        const ty = -Math.sin(rad)*(r+8);
+        ctx.fillText(t.label, tx-6, ty+4);
+    });
+    ctx.restore();
+}
+function drawLowerSemiProtractor(cx, cy, boxW){
+    const r = boxW * 0.13;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.strokeStyle = "#333";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, PI, PI*2);
+    ctx.stroke();
+    ctx.font = "11px sans-serif";
+    const majorTicks = [
+        {deg:0, label:'0'},{deg:30, label:'30'},{deg:60, label:'60'},
+        {deg:90, label:'90'},{deg:120, label:'120'},{deg:150, label:'150'},{deg:180, label:'180'}
+    ];
+    for(let d=0;d<=180;d+=10){
+        const rad = deg2rad(360 - d);
+        const x = Math.cos(rad)*r;
+        const y = -Math.sin(rad)*r;
+        ctx.beginPath();
+        const innerR = d%30===0 ? r-10 : r-5;
+        ctx.moveTo(x,y);
+        ctx.lineTo(Math.cos(rad)*innerR, -Math.sin(rad)*innerR);
+        ctx.stroke();
+    }
+    majorTicks.forEach(t=>{
+        const rad = deg2rad(360 - t.deg);
+        const tx = Math.cos(rad)*(r+8);
+        const ty = -Math.sin(rad)*(r+12);
+        ctx.fillText(t.label, tx-6, ty+4);
+    });
+    ctx.restore();
+}
+
+function drawMatchStyleLaser(redDotX, redDotY, dirX, dirY, boxW){
+    const unitLen = Math.hypot(dirX, dirY);
+    const ux = dirX / unitLen;
+    const uy = dirY / unitLen;
+    const penWidth = boxW * 0.022;
+    const penLength = boxW * 0.23;
+    const backX = redDotX - ux * penLength;
+    const backY = redDotY - uy * penLength;
+    const ox = uy * penWidth;
+    const oy = -ux * penWidth;
+
+    ctx.fillStyle="#222222";
+    ctx.beginPath();
+    ctx.moveTo(backX + ox, backY + oy);
+    ctx.lineTo(backX - ox, backY - oy);
+    ctx.lineTo(redDotX - ox, redDotY - oy);
+    ctx.lineTo(redDotX + ox, redDotY + oy);
+    ctx.closePath();
+    ctx.fill();
+}
+
+function getTouchPos(e){
+    const rect = canvas.getBoundingClientRect();
+    if(e.touches){
+        return {x:e.touches[0].clientX - rect.left, y:e.touches[0].clientY - rect.top};
+    }else{
+        return {x:e.clientX - rect.left, y:e.clientY - rect.top};
+    }
+}
+function checkDrag(pos){
+    const dist = Math.hypot(pos.x - laserDot.x, pos.y - laserDot.y);
+    dragTarget = dist < dragRadius + 6 ? "dot" : "pen";
+}
+
+canvas.addEventListener('mousedown',e=>{
+    const p = getTouchPos(e);
+    checkDrag(p);
+});
+canvas.addEventListener('mousemove',e=>{
+    if(!dragTarget) return;
+    const p = getTouchPos(e);
+    laserDot.x = p.x; laserDot.y = p.y;
+});
+canvas.addEventListener('mouseup',()=>dragTarget=null);
+canvas.addEventListener('mouseleave',()=>dragTarget=null);
+
+canvas.addEventListener('touchstart',e=>{
+    e.preventDefault();
+    const p = getTouchPos(e);
+    checkDrag(p);
+},{passive:false});
+canvas.addEventListener('touchmove',e=>{
+    e.preventDefault();
+    if(!dragTarget) return;
+    const p = getTouchPos(e);
+    laserDot.x = p.x; laserDot.y = p.y;
+},{passive:false});
+canvas.addEventListener('touchend',()=>dragTarget=null);
+canvas.addEventListener('touchcancel',()=>dragTarget=null);
+
+render();
+</script>
+</body>
+</html>
